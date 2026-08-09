@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="dark">
+<title>Mission Control — Launch Schedule &amp; Active Missions</title>
+<meta name="description" content="Live orbital launch schedule, active spaceflight missions and the operators flying them.">
+<link rel="stylesheet" href="/assets/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%9B%B0%EF%B8%8F%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+<canvas id="starfield" aria-hidden="true"></canvas>
+<div class="nebula" aria-hidden="true">
+  <span class="neb neb-a"></span>
+  <span class="neb neb-b"></span>
+  <span class="neb neb-c"></span>
+</div>
+<div class="grid-floor" aria-hidden="true"></div>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <a class="brand" href="#main">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2c2.8 2.6 4.3 6.1 4.3 10 0 2-.4 3.9-1.1 5.6H8.8A15 15 0 0 1 7.7 12c0-3.9 1.5-7.4 4.3-10Z"/>
+          <path d="M8.8 17.6 7 21l3-1.2h4l3 1.2-1.8-3.4"/>
+          <circle cx="12" cy="10" r="2.1"/>
+        </svg>
+      </span>
+      <span class="brand-text">
+        <strong>Mission Control</strong>
+        <small>orbital launch &amp; flight tracker</small>
+      </span>
+    </a>
+
+    <nav class="tabs" aria-label="Sections">
+      <button class="tab is-active" data-view="launches" aria-current="page">Launch schedule</button>
+      <button class="tab" data-view="map">Launch map</button>
+      <button class="tab" data-view="missions">Active missions</button>
+      <button class="tab" data-view="operators">Operators</button>
+    </nav>
+
+    <div class="sync" id="sync">
+      <span class="pulse" aria-hidden="true"></span>
+      <span class="sync-text" id="syncText">Acquiring telemetry…</span>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ── Hero: the next launch off the pad ───────────────────────────── -->
+  <section class="hero" id="hero" aria-labelledby="heroHeading" hidden>
+    <div class="hero-media" id="heroMedia" aria-hidden="true"></div>
+    <div class="hero-body">
+      <div class="hero-kicker">
+        <span class="tag tag-live" id="heroTag">Next launch</span>
+        <span class="dot-sep" aria-hidden="true"></span>
+        <span id="heroProvider" class="hero-provider"></span>
+      </div>
+
+      <h1 class="hero-title" id="heroHeading"></h1>
+      <p class="hero-sub" id="heroSub"></p>
+
+      <div class="countdown" id="heroCountdown" role="timer" aria-live="off">
+        <div class="cd-unit"><span class="cd-num" data-cd="d">--</span><span class="cd-lab">days</span></div>
+        <span class="cd-colon" aria-hidden="true">:</span>
+        <div class="cd-unit"><span class="cd-num" data-cd="h">--</span><span class="cd-lab">hrs</span></div>
+        <span class="cd-colon" aria-hidden="true">:</span>
+        <div class="cd-unit"><span class="cd-num" data-cd="m">--</span><span class="cd-lab">min</span></div>
+        <span class="cd-colon" aria-hidden="true">:</span>
+        <div class="cd-unit"><span class="cd-num" data-cd="s">--</span><span class="cd-lab">sec</span></div>
+      </div>
+      <p class="cd-note" id="heroT0"></p>
+
+      <dl class="hero-facts" id="heroFacts"></dl>
+
+      <div class="hero-actions">
+        <button class="btn btn-primary" id="heroDetail" type="button">Mission detail</button>
+        <a class="btn btn-ghost" id="heroWatch" href="#" target="_blank" rel="noopener noreferrer" hidden>Watch live</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── KPI row ─────────────────────────────────────────────────────── -->
+  <section class="kpis" id="kpis" aria-label="Current spaceflight activity">
+    <article class="kpi"><span class="kpi-label">Launches scheduled</span><span class="kpi-value" id="kpiLaunches">—</span><span class="kpi-foot" id="kpiLaunchesFoot">next 40 on the manifest</span></article>
+    <article class="kpi"><span class="kpi-label">Humans in space</span><span class="kpi-value" id="kpiCrew">—</span><span class="kpi-foot" id="kpiCrewFoot">right now, off Earth</span></article>
+    <article class="kpi"><span class="kpi-label">Spacecraft in flight</span><span class="kpi-value" id="kpiCraft">—</span><span class="kpi-foot" id="kpiCraftFoot">crewed and cargo</span></article>
+    <article class="kpi"><span class="kpi-label">Active operators</span><span class="kpi-value" id="kpiOps">—</span><span class="kpi-foot" id="kpiOpsFoot">with launches booked</span></article>
+  </section>
+
+  <!-- ── View: launch schedule ───────────────────────────────────────── -->
+  <section class="view is-active" id="view-launches" aria-label="Launch schedule">
+    <div class="view-head">
+      <h2 class="view-title">Launch schedule</h2>
+      <p class="view-note">Times are shown in your local timezone. A launch date only becomes exact once the operator confirms T‑0 — until then it is an estimate that can move by days.</p>
+    </div>
+
+    <div class="toolbar" role="search">
+      <div class="field">
+        <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5" stroke-linecap="round"/></svg>
+        <input type="search" id="search" placeholder="Search mission, rocket, pad…" aria-label="Search launches" autocomplete="off">
+      </div>
+      <div class="chips" id="opChips" role="group" aria-label="Filter by operator"></div>
+      <div class="seg" role="group" aria-label="Filter by confirmation">
+        <button class="seg-btn is-on" data-conf="all">All</button>
+        <button class="seg-btn" data-conf="go">Confirmed</button>
+        <button class="seg-btn" data-conf="tbd">Estimated</button>
+      </div>
+    </div>
+
+    <p class="result-count" id="resultCount" aria-live="polite"></p>
+    <div class="launch-list" id="launchList"></div>
+
+    <div class="recent" id="recentWrap">
+      <h3 class="sub-title">Recently flown</h3>
+      <div class="recent-list" id="recentList"></div>
+    </div>
+  </section>
+
+  <!-- ── View: launch map ────────────────────────────────────────────── -->
+  <section class="view" id="view-map" aria-label="Launch map" hidden>
+    <div class="view-head">
+      <h2 class="view-title">Launch map</h2>
+      <p class="view-note">Every site with a launch on the manifest, plotted where it actually sits. The shaded band is the Earth's night side right now — it moves as you watch. Select a site to see what is flying from it.</p>
+    </div>
+
+    <div class="map-wrap">
+      <div class="map-stage">
+        <svg id="map" viewBox="-30 70 2060 710" preserveAspectRatio="xMidYMid meet"
+             role="img" aria-labelledby="mapTitle mapDesc">
+          <title id="mapTitle">World map of active launch sites</title>
+          <desc id="mapDesc">Launch sites with scheduled missions, marked on a world map. The same information is listed in the launch schedule.</desc>
+          <defs>
+            <radialGradient id="padGlow">
+              <stop offset="0%" stop-color="#5ce1ff" stop-opacity=".55"/>
+              <stop offset="100%" stop-color="#5ce1ff" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <!-- Overhangs the 0..2000 canvas to fill the viewBox padding that
+               keeps edge markers (Mahia at 177.9E) from being clipped. -->
+          <rect class="map-ocean" x="-30" y="0" width="2060" height="1000"/>
+          <g id="mapGraticule" class="map-graticule" aria-hidden="true"></g>
+          <path id="mapLand" class="map-land"/>
+          <path id="mapNight" class="map-night" aria-hidden="true"/>
+          <path id="mapTermLine" class="map-term-line" aria-hidden="true"/>
+          <g id="mapSun" aria-hidden="true"></g>
+          <g id="mapSites"></g>
+        </svg>
+        <div class="map-tip" id="mapTip" hidden aria-hidden="true"></div>
+      </div>
+
+      <div class="map-legend">
+        <span class="lg"><span class="lg-dot lg-next"></span>Next off the pad</span>
+        <span class="lg"><span class="lg-dot lg-site"></span>Site with launches booked</span>
+        <span class="lg"><span class="lg-swatch"></span>Night side</span>
+        <span class="lg lg-note">Marker size = launches scheduled</span>
+      </div>
+    </div>
+
+    <div class="site-panel" id="sitePanel">
+      <p class="site-empty" id="siteEmpty">Select a site on the map to see its scheduled launches.</p>
+      <div id="siteDetail" hidden></div>
+    </div>
+  </section>
+
+  <!-- ── View: active missions ───────────────────────────────────────── -->
+  <section class="view" id="view-missions" aria-label="Active missions" hidden>
+    <div class="view-head">
+      <h2 class="view-title">Active missions</h2>
+      <p class="view-note">Everything currently off the planet: the crews on orbit, the vehicles flying, and the stations they are flying to.</p>
+    </div>
+
+    <div class="crew-banner" id="crewBanner">
+      <div class="crew-count">
+        <span class="crew-num" id="crewNum">—</span>
+        <span class="crew-cap">people are in space right now</span>
+      </div>
+      <p class="crew-note" id="crewNote"></p>
+    </div>
+
+    <div class="crew-grid" id="crewGrid"></div>
+
+    <h3 class="sub-title">Spacecraft in flight</h3>
+    <div class="craft-grid" id="craftGrid"></div>
+
+    <h3 class="sub-title">Space stations on orbit</h3>
+    <div class="station-grid" id="stationGrid"></div>
+  </section>
+
+  <!-- ── View: operators ─────────────────────────────────────────────── -->
+  <section class="view" id="view-operators" aria-label="Operators" hidden>
+    <div class="view-head">
+      <h2 class="view-title">Operators</h2>
+      <p class="view-note">The agencies and companies flying the manifest above, with their all‑time flight record. Success rate counts every launch the operator has ever attempted, not just recent ones.</p>
+    </div>
+    <div class="op-grid" id="opGrid"></div>
+  </section>
+
+  <div class="empty" id="globalEmpty" hidden>
+    <p>Telemetry unavailable — the upstream launch database could not be reached. The dashboard will keep retrying.</p>
+  </div>
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-inner">
+    <p>
+      Launch, crew and spacecraft data from
+      <a href="https://thespacedevs.com/llapi" target="_blank" rel="noopener noreferrer">The Space Devs — Launch Library 2</a>,
+      used under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>.
+      Imagery is credited to its respective agencies and operators.
+    </p>
+    <p class="foot-meta" id="footMeta"></p>
+  </div>
+</footer>
+
+<!-- ── Mission detail dialog ─────────────────────────────────────────── -->
+<div class="modal" id="modal" hidden>
+  <div class="modal-scrim" data-close></div>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1">
+    <button class="modal-x" type="button" data-close aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+    </button>
+    <div class="modal-body" id="modalBody"><h2 id="modalTitle"></h2></div>
+  </div>
+</div>
+
+<script src="/assets/world.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>

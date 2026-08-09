@@ -1,0 +1,7 @@
+# Cached Launch Library 2 responses and proxied mission imagery. Refetched on
+# demand; the cache exists to stay inside LL2's rate limit, not to be kept.
+cache/
+
+venv/
+__pycache__/
+*.py[cod]
