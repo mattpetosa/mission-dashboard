@@ -4,7 +4,7 @@ A live dashboard for orbital spaceflight: what's launching next, who's off the
 planet right now, and the agencies and companies flying them — over a world map
 with a real-time day/night terminator.
 
-### → **[mission.mhpserver.cc](https://mission.mhpserver.cc)** — live site
+### → **[mission.mhpwebserver.com](https://mission.mhpwebserver.com)** — live site
 
 ![Launch schedule](docs/screenshots/launch-schedule.png)
 

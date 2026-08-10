@@ -2,7 +2,7 @@
 #
 # Push the working tree to the running site.
 #
-# The repo is the source of truth; /var/www/mission.mhpserver.cc is a deploy target.
+# The repo is the source of truth; /var/www/mission.mhpwebserver.com is a deploy target.
 # Nothing should be edited in the served directory — this script overwrites it,
 # so an edit made there disappears on the next deploy.
 #
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WEBROOT="/var/www/mission.mhpserver.cc"
+WEBROOT="/var/www/mission.mhpwebserver.com"
 SERVICE="mission-backend"
 PORT=8793
 SRC="www"

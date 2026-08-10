@@ -6,7 +6,7 @@ baked SVG world map with a live day/night terminator.
 | What | Where |
 |---|---|
 | Application | `/home/matt/mission-dashboard` |
-| Served static files | `/var/www/mission.mhpserver.cc` (deploy target) |
+| Served static files | `/var/www/mission.mhpwebserver.com` (deploy target) |
 | API | gunicorn on `127.0.0.1:8793`, proxied at `/api/` |
 | Service | `mission-backend.service` |
 | Cache | `cache/` — 30MB of API responses and proxied imagery, not in git |
@@ -24,8 +24,8 @@ python3 -m venv venv && ./venv/bin/pip install flask gunicorn requests
 
 sudo cp deploy/systemd/mission-backend.service /etc/systemd/system/
 sudo cp deploy/nginx/ssl-params.conf /etc/nginx/snippets/
-sudo cp deploy/nginx/mission.mhpserver.cc.conf /etc/nginx/sites-available/
-sudo ln -s /etc/nginx/sites-available/mission.mhpserver.cc.conf /etc/nginx/sites-enabled/
+sudo cp deploy/nginx/mission.mhpwebserver.com.conf /etc/nginx/sites-available/
+sudo ln -s /etc/nginx/sites-available/mission.mhpwebserver.com.conf /etc/nginx/sites-enabled/
 
 sudo systemctl daemon-reload && sudo systemctl enable --now mission-backend
 sudo nginx -t && sudo systemctl reload nginx
