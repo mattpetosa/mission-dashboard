@@ -33,6 +33,16 @@ echo "==> syncing $SRC/ ($count files) -> $WEBROOT"
 find "$WEBROOT" -mindepth 1 -delete
 cp -a "$REPO/$SRC/." "$WEBROOT/"
 
+# Record what was actually deployed, fetchable at /VERSION. Written after the
+# copy, or the sync above would delete it. `--dirty` is the important flag:
+# it marks a deploy made from uncommitted changes, which is the state you most
+# want to know about later and the one nobody remembers being in.
+{
+  echo "version:  $(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+  echo "commit:   $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "deployed: $(date -Is)"
+} > "$WEBROOT/VERSION"
+
 if [[ "${1:-}" != "--static" ]]; then
     echo "==> restarting $SERVICE"
     sudo systemctl restart "$SERVICE"
@@ -51,4 +61,4 @@ curl -sf -o /dev/null --max-time 5 "http://127.0.0.1:$PORT/" \
   || curl -s -o /dev/null --max-time 5 "http://127.0.0.1:$PORT/" \
   || { echo "FAILED: nothing answering on 127.0.0.1:$PORT" >&2; exit 1; }
 
-echo "deployed $(git rev-parse --short HEAD 2>/dev/null || echo 'working tree')"
+echo "deployed $(git describe --tags --always --dirty 2>/dev/null || echo 'working tree')"
