@@ -85,6 +85,21 @@
         <a class="btn btn-ghost" id="heroWatch" href="#" target="_blank" rel="noopener noreferrer" hidden>Watch live</a>
       </div>
     </div>
+
+    <!-- Live video. Nothing is loaded from the stream host until the visitor
+         presses play; until then this is a proxied poster like every other
+         image on the page. -->
+    <aside class="stream" id="heroStream" aria-labelledby="streamLabel">
+      <div class="stream-head">
+        <span class="stream-label" id="streamLabel">Live video</span>
+        <span class="stream-status" id="streamStatus" data-state="standby">
+          <span class="stream-status-dot" aria-hidden="true"></span>
+          <span id="streamStatusText">Standby</span>
+        </span>
+      </div>
+      <div class="stream-stage" id="streamStage"></div>
+      <p class="stream-foot" id="streamFoot"></p>
+    </aside>
   </section>
 
   <!-- ── KPI row ─────────────────────────────────────────────────────── -->

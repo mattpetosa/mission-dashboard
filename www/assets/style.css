@@ -282,6 +282,130 @@ img { max-width: 100%; display: block; }
 
 .hero-actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.75rem; }
 
+/* ── Hero: live video ─────────────────────────────────────────────── */
+
+/* Sits beside the countdown on a desktop, under it on anything narrower. */
+.stream {
+  border-top: 1px solid var(--hairline);
+  padding: clamp(1.1rem, 2.4vw, 1.5rem);
+  display: flex; flex-direction: column; gap: .75rem;
+  background: linear-gradient(180deg, rgba(6,10,22,.55), rgba(6,10,22,.78));
+}
+.stream-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.stream-label {
+  font-family: var(--mono); font-size: .64rem; text-transform: uppercase;
+  letter-spacing: .18em; color: var(--ink-3);
+}
+.stream-status {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-family: var(--mono); font-size: .64rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .12em;
+  padding: .22rem .5rem; border-radius: 6px;
+  border: 1px solid var(--hairline); color: var(--ink-2);
+  background: rgba(255,255,255,.03);
+}
+.stream-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+/* Status colour rides the dot and the tint; the label stays high-contrast ink,
+   so the state is never carried by hue alone. */
+.stream-status[data-state="live"] {
+  color: var(--critical-ink); border-color: rgba(208,59,59,.45); background: rgba(208,59,59,.14);
+}
+.stream-status[data-state="live"] .stream-status-dot {
+  background: var(--critical-ink); animation: pulse-dot 1.6s ease-in-out infinite;
+}
+.stream-status[data-state="ready"] { color: var(--good-ink); border-color: rgba(12,163,12,.4); background: rgba(12,163,12,.12); }
+.stream-status[data-state="ready"] .stream-status-dot { background: var(--good-ink); }
+.stream-status[data-state="standby"] .stream-status-dot { animation: pulse-dot 2.6s ease-in-out infinite; }
+
+.stream-stage {
+  position: relative; aspect-ratio: 16 / 9; width: 100%;
+  border-radius: var(--radius-sm); overflow: hidden;
+  border: 1px solid var(--hairline-2);
+  background: radial-gradient(120% 90% at 50% 0%, #101a33 0%, #060a16 70%);
+}
+.stream-stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* Facade: poster + play control. The stream host is contacted only after this
+   button is pressed, which is also why the poster is proxied like every other
+   image on the page. */
+.stream-open {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: block; padding: 0; margin: 0; cursor: pointer;
+  border: 0; background: transparent; color: inherit; text-align: left;
+  font: inherit; text-decoration: none;
+}
+.stream-poster { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.stream-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(4,6,15,.96) 0%, rgba(4,6,15,.8) 26%, rgba(4,6,15,.22) 62%, rgba(4,6,15,.1) 100%);
+}
+.stream-play-badge {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  width: 62px; height: 62px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(8,12,24,.72); border: 1px solid rgba(255,255,255,.5);
+  box-shadow: 0 0 34px -8px rgba(0,0,0,.9);
+  transition: transform .18s ease, background .18s ease, border-color .18s ease;
+}
+.stream-play-badge svg { width: 26px; height: 26px; fill: #fff; }
+.stream-open:hover .stream-play-badge,
+.stream-open:focus-visible .stream-play-badge {
+  transform: translate(-50%,-50%) scale(1.07);
+  background: rgba(92,225,255,.22); border-color: var(--accent);
+}
+.stream-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stream-caption {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: .7rem .8rem;
+  font-size: .78rem; line-height: 1.35; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Standby panel — no stream published yet. Motion only: nothing here animates
+   opacity, so a frozen compositor still shows a fully legible panel. */
+.stream-standby {
+  position: absolute; inset: 0; display: grid; place-content: center;
+  gap: .5rem; padding: 1rem; text-align: center;
+}
+.stream-standby::before {
+  content: ""; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(124,162,255,.05) 0 1px, transparent 1px 4px);
+}
+.stream-standby::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 34%;
+  background: linear-gradient(180deg, transparent, rgba(92,225,255,.09), transparent);
+  animation: sweep 5.5s linear infinite;
+}
+@keyframes sweep { from { transform: translateY(-120%); } to { transform: translateY(420%); } }
+.stream-standby > * { position: relative; }
+.stream-standby-title {
+  font-family: var(--mono); font-size: .72rem; text-transform: uppercase;
+  letter-spacing: .2em; color: var(--accent);
+}
+.stream-standby-title::after {
+  content: ""; display: inline-block; width: .55ch; height: 1em; margin-left: .35ch;
+  background: currentColor; vertical-align: -.15em;
+  animation: caret 1.1s steps(1) infinite;
+}
+@keyframes caret { 0%, 49% { visibility: visible; } 50%, 100% { visibility: hidden; } }
+.stream-standby-note { font-size: .8rem; color: var(--ink-2); max-width: 34ch; margin-inline: auto; }
+.stream-standby-eta { font-family: var(--mono); font-size: .7rem; color: var(--ink-3); }
+
+.stream-foot { font-size: .74rem; color: var(--ink-3); line-height: 1.45; }
+.stream-foot a { color: var(--ink-2); }
+.stream-foot .stream-src { color: var(--ink-2); font-weight: 550; }
+.stream-alt {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-family: var(--mono); font-size: .68rem; letter-spacing: .04em;
+}
+
+@media (min-width: 1024px) {
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) clamp(310px, 31%, 420px); }
+  .hero-body { max-width: none; }
+  /* Stretches the full height of the hero so the divider runs edge to edge --
+     the panel is part of the instrument, not a card floating beside it. */
+  .stream { border-top: 0; border-left: 1px solid var(--hairline); }
+}
+
 .btn {
   appearance: none; cursor: pointer; font: inherit; font-size: .875rem; font-weight: 600;
   padding: .62rem 1.15rem; border-radius: 10px; border: 1px solid var(--hairline-2);

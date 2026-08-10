@@ -84,12 +84,9 @@ def api_health():
 
 # Exact-match allowlist. Anything not on it is refused outright -- this endpoint
 # takes a URL from the client, so an open fetcher here would be an SSRF hole
-# straight into the LAN.
-ALLOWED_IMAGE_HOSTS = {
-    "thespacedevs-prod.nyc3.digitaloceanspaces.com",
-    "thespacedevs-prod.nyc3.cdn.digitaloceanspaces.com",
-    "i.ytimg.com",
-}
+# straight into the LAN. It is defined next to the normaliser (ll2.IMAGE_HOSTS)
+# so the payload can never advertise an image this route would refuse.
+ALLOWED_IMAGE_HOSTS = ll2.IMAGE_HOSTS
 
 IMG_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "img")
 os.makedirs(IMG_CACHE, exist_ok=True)
@@ -168,6 +165,10 @@ def warm_images():
             out += [launch.get("image"), launch.get("patch")]
             if launch.get("provider"):
                 out.append(launch["provider"].get("logo"))
+            # Stream posters: the hero video box is the first thing a visitor
+            # looks at, so its poster must not be a cold miss.
+            for stream in launch.get("streams") or []:
+                out += [stream.get("thumb"), stream.get("thumb_alt")]
         for group in ("astronauts", "spacecraft", "stations", "operators"):
             for item in payload.get(group) or []:
                 out.append(item.get("image") or item.get("logo"))
