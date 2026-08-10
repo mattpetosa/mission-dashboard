@@ -394,7 +394,192 @@
       watch.hidden = true;
     }
 
+    renderStream();
     tickHero();
+  }
+
+  /* ── Render: hero live video ─────────────────────────────────────── */
+
+  /* The player is a facade: the poster is a proxied image like every other
+     picture on this page, and the stream host is contacted only once the
+     visitor presses play. */
+  var stream = { key: null, mode: null, playing: false, pick: null };
+
+  var PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg>';
+  var LINK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.4l-8.3 8.3-1.4-1.4L17.6 5H14V3zM5 5h5v2H6v11h11v-4h2v6H5V5z"/></svg>';
+
+  /* Only YouTube can play inside the page. When the best stream lives
+     elsewhere -- SpaceX's official coverage is on X -- the box plays the best
+     embeddable one, names its publisher, and links the others rather than
+     quietly passing a re-stream off as the official feed. */
+  function pickStream(launch) {
+    var list = (launch && launch.streams) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].embed) return list[i];
+    }
+    return list[0] || null;
+  }
+
+  function untilText(target) {
+    var c = countdownParts(target);
+    if (c.past) return null;
+    if (c.d > 0) return c.d + "d " + c.h + "h";
+    if (c.h > 0) return c.h + "h " + pad(c.m) + "m";
+    if (c.m > 0) return c.m + "m " + pad(c.s) + "s";
+    return c.s + "s";
+  }
+
+  function streamFacade(pick) {
+    var poster = pick.thumb ? img(pick.thumb) : null;
+    var fallback = pick.thumb_alt ? img(pick.thumb_alt) : "";
+    var who = pick.publisher || "the operator";
+    var label = pick.embed
+      ? "Play the " + who + " stream"
+      : "Open the " + who + " stream" + (pick.source ? " on " + pick.source : "") + " in a new tab";
+
+    var inner =
+      (poster ? '<img class="stream-poster" src="' + esc(poster) + '" alt="" ' +
+                'data-fallback="' + esc(fallback) + '">' : "") +
+      '<span class="stream-scrim"></span>' +
+      '<span class="stream-play-badge">' + (pick.embed ? PLAY_ICON : LINK_ICON) + '</span>' +
+      (pick.title ? '<span class="stream-caption">' + esc(pick.title) + "</span>" : "");
+
+    if (pick.embed) {
+      return '<button class="stream-open" type="button" data-play="1" aria-label="' + esc(label) + '">' + inner + "</button>";
+    }
+    return '<a class="stream-open" href="' + esc(pick.url) + '" target="_blank" rel="noopener noreferrer" ' +
+      'aria-label="' + esc(label) + '">' + inner + "</a>";
+  }
+
+  function streamStandby() {
+    return '<div class="stream-standby">' +
+      '<p class="stream-standby-title">Awaiting downlink</p>' +
+      '<p class="stream-standby-note">Mission control video connecting soon — no stream has been published for this launch yet.</p>' +
+      '<p class="stream-standby-eta" id="streamEta"></p>' +
+      "</div>";
+  }
+
+  function playStream(pick) {
+    var stage = $("#streamStage");
+    // youtube-nocookie, and only from here: the visitor asked for the video.
+    var src = pick.embed + "?autoplay=1&rel=0&modestbranding=1";
+    var frame = document.createElement("iframe");
+    frame.src = src;
+    frame.title = pick.title || "Launch webcast";
+    frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+    frame.allowFullscreen = true;
+    frame.referrerPolicy = "strict-origin-when-cross-origin";
+    stage.innerHTML = "";
+    stage.appendChild(frame);
+    stream.playing = true;
+  }
+
+  function renderStream() {
+    var box = $("#heroStream");
+    var launch = state.heroLaunch;
+    if (!launch) { box.hidden = true; return; }
+    box.hidden = false;
+
+    var list = launch.streams || [];
+    var pick = pickStream(launch);
+    var live = !!(launch.webcast_live || (pick && pick.live));
+    var mode = !pick ? "standby" : live ? "live" : "ready";
+
+    var status = $("#streamStatus");
+    status.setAttribute("data-state", mode);
+    $("#streamStatusText").textContent = !pick ? "Standby"
+      : live ? "Live now"
+      : pick.embed ? "Stream ready" : "Off-site";
+
+    /* Rebuild the stage only when the stream itself changes: this runs on every
+       60s poll and must never yank a playing video out from under the visitor.
+       Going live is deliberately not part of the key -- it moves the status
+       pill and the caption text, both of which update in place. */
+    var key = (launch.id || "") + "|" + (pick ? pick.url : "none");
+    stream.pick = pick;  // refreshed every poll: the live flag on it moves
+    if (stream.key !== key) {
+      stream.key = key;
+      stream.playing = false;
+      $("#streamStage").innerHTML = pick ? streamFacade(pick) : streamStandby();
+
+      var poster = $(".stream-poster", $("#streamStage"));
+      if (poster) {
+        // YouTube only generates maxresdefault for some streams; LL2 hands us
+        // that URL regardless, so fall back to the size that always exists.
+        poster.addEventListener("error", function () {
+          var alt = poster.getAttribute("data-fallback");
+          if (alt && poster.src.indexOf(alt) === -1) { poster.src = alt; poster.removeAttribute("data-fallback"); }
+          else { poster.remove(); }
+        });
+      }
+      var button = $("[data-play]", $("#streamStage"));
+      if (button) button.addEventListener("click", function () { playStream(pick); });
+
+      $("#streamFoot").innerHTML = streamFootHtml(list, pick);
+    }
+
+    tickStream();
+  }
+
+  function streamFootHtml(list, pick) {
+    if (!pick) {
+      return "Coverage is usually published a few hours before T‑0. This panel picks it up on its own — nothing to refresh.";
+    }
+
+    var line = '<span class="stream-src">' + esc(pick.publisher || "Unknown source") + "</span>";
+    var detail = [];
+    if (pick.type) detail.push(esc(pick.type));
+    if (pick.language) detail.push(esc(pick.language));
+    if (detail.length) line += " · " + detail.join(" · ");
+
+    var parts = [line];
+
+    var others = list.filter(function (s) { return s.url !== pick.url; });
+    if (others.length) {
+      parts.push("Also: " + others.slice(0, 3).map(function (s) {
+        var name = s.publisher || s.source || "stream";
+        return '<a class="stream-alt" href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' +
+          esc(name) + (s.official ? " (official)" : "") + " ↗</a>";
+      }).join(", "));
+    }
+
+    if (pick.embed) {
+      parts.push('<span id="streamEta"></span>');
+      parts.push("Nothing is requested from YouTube until you press play.");
+    } else {
+      parts.push('<span id="streamEta"></span>');
+      parts.push("This one can only be watched on its own host, so it opens in a new tab.");
+    }
+
+    return parts.join("<br>");
+  }
+
+  /* Second-resolution text inside the panel, kept out of renderStream so the
+     stage is not rebuilt once a second. */
+  function tickStream() {
+    var el = document.getElementById("streamEta");
+    if (!el) return;
+    var launch = state.heroLaunch;
+    if (!launch) { el.textContent = ""; return; }
+
+    var pick = stream.pick;
+    var live = !!(launch.webcast_live || (pick && pick.live));
+    if (live) { el.textContent = pick ? "On air now." : ""; return; }
+
+    var start = pick ? parseNet(pick.start_time) : null;
+    var until = start ? untilText(start) : null;
+    if (until) { el.textContent = "Coverage begins " + fmtTime(start) + " — in " + until + "."; return; }
+
+    var net = parseNet(launch.net);
+    var away = net ? untilText(net) : null;
+    if (!pick) {
+      el.textContent = !net ? "No launch date announced yet."
+        : !precisionOf(launch).exact ? "T‑0 is still an estimate."
+        : away ? "T‑ " + away + " to launch." : "T‑0 has passed.";
+      return;
+    }
+    el.textContent = start ? "Coverage was due to start at " + fmtTime(start) + "."
+      : away ? "T‑ " + away + " to launch." : "";
   }
 
   function tickHero() {
@@ -1203,7 +1388,7 @@
 
     load();
     setInterval(function () { if (!document.hidden) load(); }, POLL_MS);
-    setInterval(function () { tickHero(); tickList(); }, 1000);
+    setInterval(function () { tickHero(); tickStream(); tickList(); }, 1000);
     setInterval(updateSync, 30000);
     setInterval(function () { if (!document.hidden) updateTerminator(); }, 60000);
   }

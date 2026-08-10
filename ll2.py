@@ -17,6 +17,7 @@ import re
 import threading
 import time
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -25,6 +26,18 @@ log = logging.getLogger("mission.ll2")
 API_ROOT = "https://ll.thespacedevs.com/2.3.0"
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
 USER_AGENT = "mission.mhpserver.cc (personal launch dashboard)"
+
+# Every upstream host we are willing to fetch imagery from, exact match. This is
+# the allowlist app.py's image proxy enforces (that endpoint takes a URL from the
+# client, so an open fetcher there would be an SSRF hole straight into the LAN),
+# and it lives here so the normaliser can refuse to emit an image URL the proxy
+# would only turn around and 403.
+IMAGE_HOSTS = {
+    "thespacedevs-prod.nyc3.digitaloceanspaces.com",
+    "thespacedevs-prod.nyc3.cdn.digitaloceanspaces.com",
+    "i.ytimg.com",
+    "pbs.twimg.com",
+}
 
 # name -> (path, query params, ttl seconds)
 #
@@ -326,25 +339,120 @@ def norm_provider(p):
     }
 
 
-def _webcast(launch):
-    vids = launch.get("vid_urls") or []
-    best = None
-    for v in vids:
-        if not isinstance(v, dict) or not v.get("url"):
-            continue
-        if best is None or (v.get("priority") or 99) < (best.get("priority") or 99):
-            best = v
-    if not best:
+_YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_YT_HOSTS = {"youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"}
+
+
+def _youtube_id(url):
+    """Video id out of any of YouTube's URL shapes, or None if it isn't YouTube.
+
+    Only YouTube can be played inside the page; every other source (X
+    broadcasts, agency players) is a link out, so this is what decides whether
+    the hero gets a video box or a standby panel.
+    """
+    try:
+        parsed = urlparse(url or "")
+    except ValueError:
         return None
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host == "youtu.be":
+        candidate = parsed.path.lstrip("/").split("/")[0]
+    elif host in _YT_HOSTS:
+        if parsed.path == "/watch":
+            candidate = (parse_qs(parsed.query).get("v") or [""])[0]
+        else:
+            parts = [p for p in parsed.path.split("/") if p]
+            # /live/<id>, /embed/<id>, /v/<id>, /shorts/<id>
+            candidate = parts[1] if len(parts) >= 2 and parts[0] in ("live", "embed", "v", "shorts") else ""
+    else:
+        return None
+    return candidate if _YT_ID.match(candidate or "") else None
+
+
+def _proxyable(url):
+    """An image URL only if our own proxy would agree to fetch it."""
+    text = _clean(url)
+    if not text:
+        return None
+    try:
+        parsed = urlparse(text)
+    except ValueError:
+        return None
+    if parsed.scheme != "https" or parsed.hostname not in IMAGE_HOSTS:
+        return None
+    return text
+
+
+def _language(obj):
+    if isinstance(obj, dict):
+        return _clean(obj.get("name"))
+    if isinstance(obj, list):
+        names = [_clean(l.get("name")) for l in obj if isinstance(l, dict)]
+        names = [n for n in names if n]
+        return ", ".join(names) or None
+    return _clean(obj)
+
+
+def norm_stream(v):
+    """One entry of `vid_urls`, normalised for the player."""
+    url = _clean(v.get("url"))
+    if not url or not url.lower().startswith(("http://", "https://")):
+        return None
+
+    video_id = _youtube_id(url)
+    kind = v.get("type") if isinstance(v.get("type"), dict) else {}
+    kind_name = _clean(kind.get("name"))
+
+    # LL2's own `feature_image` is the best poster when it exists, but it points
+    # at YouTube's `maxresdefault_live.jpg`, which is only generated for some
+    # streams -- hence the hqdefault fallback the client swaps in on error.
+    thumb_alt = "https://i.ytimg.com/vi/%s/hqdefault.jpg" % video_id if video_id else None
+    thumb = _proxyable(v.get("feature_image")) or thumb_alt
+
     return {
-        "url": best.get("url"),
-        "title": best.get("title"),
-        "publisher": best.get("publisher") or best.get("source"),
-        "live": bool(launch.get("webcast_live")),
+        "url": url,
+        "title": _clean(v.get("title")),
+        "publisher": _clean(v.get("publisher")) or _clean(v.get("source")),
+        "source": _clean(v.get("source")),
+        "type": kind_name,
+        # "Unofficial Webcast" contains "official" -- test for the negative
+        # first, or every re-stream gets badged as the operator's own feed.
+        "official": bool(kind_name and "unofficial" not in kind_name.lower() and "official" in kind_name.lower()),
+        "priority": v.get("priority") if isinstance(v.get("priority"), int) else 99,
+        "language": _language(v.get("language")),
+        "start_time": _clean(v.get("start_time")),
+        "end_time": _clean(v.get("end_time")),
+        "live": bool(v.get("live")),
+        # Set only for YouTube: the presence of `embed` is what tells the client
+        # it can play the stream in place rather than linking away.
+        "video_id": video_id,
+        "embed": "https://www.youtube-nocookie.com/embed/%s" % video_id if video_id else None,
+        "thumb": thumb,
+        "thumb_alt": thumb_alt,
     }
 
 
+def _streams(launch):
+    """Every published stream for a launch, best first.
+
+    LL2's `priority` is the editorial ordering (official coverage usually leads),
+    so it decides ties -- but anything flagged live outranks it, since a stream
+    that is actually on air is the one a visitor wants.
+    """
+    out = []
+    for v in launch.get("vid_urls") or []:
+        if isinstance(v, dict):
+            s = norm_stream(v)
+            if s:
+                out.append(s)
+    out.sort(key=lambda s: (not s["live"], s["priority"]))
+    return out
+
+
 def norm_launch(l):
+    streams = _streams(l)
     rocket_cfg = ((l.get("rocket") or {}).get("configuration")) or {}
     mission = l.get("mission") or {}
     pad = l.get("pad") or {}
@@ -412,7 +520,12 @@ def norm_launch(l):
             for p in (l.get("program") or [])
             if isinstance(p, dict) and p.get("name")
         ],
-        "webcast": _webcast(l),
+        # `webcast` is the single best link (buttons, list badges); `streams` is
+        # the full set the hero player chooses from -- the top-priority stream
+        # is not always the embeddable one.
+        "webcast": dict(streams[0], live=streams[0]["live"] or bool(l.get("webcast_live"))) if streams else None,
+        "streams": streams,
+        "webcast_live": bool(l.get("webcast_live")),
         "last_updated": l.get("last_updated"),
         "update": ((l.get("updates") or [{}])[0] or {}).get("comment"),
     }

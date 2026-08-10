@@ -18,9 +18,9 @@ No API key, no database, no accounts — clone it and it runs.
 ### Launch schedule
 
 The next launch off the pad gets the hero treatment: a live countdown to T‑0,
-the pad, the orbit, and a link to the webcast when there is one. Below it, the
-next 40 launches on the manifest, searchable by mission, rocket or pad, and
-filterable by operator.
+the pad, the orbit, and the live video beside it. Below it, the next 40 launches
+on the manifest, searchable by mission, rocket or pad, and filterable by
+operator.
 
 **Launch dates lie, and the dashboard says so.** LL2 publishes a precision field
 alongside every launch time; anything coarser than "to the hour" is an estimate
@@ -28,6 +28,26 @@ that can move by days, and those launches are labelled **Date unconfirmed**
 rather than being shown as if T‑0 were settled. The **Confirmed / Estimated**
 filter exists so you can look at only the launches that are actually going to
 happen when they say.
+
+### Live video
+
+The panel beside the countdown carries whatever coverage exists for that launch.
+When there is an embeddable stream it plays in place; when the only coverage is
+somewhere that cannot be embedded — SpaceX's own webcasts live on X — it opens
+there instead; and when nothing has been published yet the panel says so and
+waits, rather than pretending a dead link is a stream.
+
+It is a **facade, not an embed**: what loads with the page is a poster served
+through the same image proxy as everything else here. The stream host is
+contacted only after the play button is pressed, and then through
+`youtube-nocookie.com`.
+
+Launches often carry several streams — an official one plus re-streams from
+NASASpaceflight or Space Affairs. The panel plays the best one it *can* play,
+names its publisher, and links the rest, because a re-stream badged as the
+operator's own feed would be a lie the layout tells for free. (LL2's type name
+for those is `Unofficial Webcast`, which contains the string `official` — worth
+knowing before writing that check.)
 
 ### Launch map
 
