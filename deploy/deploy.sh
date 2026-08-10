@@ -8,6 +8,7 @@
 #
 #   ./deploy/deploy.sh          # sync static + restart the API
 #   ./deploy/deploy.sh --static # static only, no restart
+#   ./deploy/deploy.sh --force  # sync even if the webroot looks hand-edited
 #
 set -euo pipefail
 
@@ -19,6 +20,17 @@ SRC="www"
 
 cd "$REPO"
 
+STATIC_ONLY=0
+FORCE=0
+for arg in "$@"; do
+    case "$arg" in
+        --static) STATIC_ONLY=1 ;;
+        --force)  FORCE=1 ;;
+        *) echo "unknown option: $arg (want --static and/or --force)" >&2; exit 2 ;;
+    esac
+done
+
+
 [[ -n "$(git status --porcelain)" ]] && echo "note: working tree is dirty — deploying uncommitted changes"
 
 # Refuse to empty the webroot for a source that does not look like the site.
@@ -26,6 +38,48 @@ count=$(find "$REPO/$SRC" -type f 2>/dev/null | wc -l)
 if [[ ! -f "$REPO/$SRC/index.html" || "$count" -lt 3 ]]; then
     echo "REFUSING: $SRC/ has $count files and no usable index.html." >&2
     echo "That does not look like the site. Nothing was changed." >&2
+    exit 1
+fi
+
+# Has anyone edited the SERVED copy directly? Until this repo existed those
+# directories WERE the source, so the habit is months old — and the sync below
+# deletes the webroot outright, which would throw the work away with no error
+# and no copy anywhere. Two signals, both cheap:
+#
+#   extra  — a file served that the repo has never heard of
+#   newer  — a served file with a later mtime than its source twin. cp -a
+#            preserves timestamps, so after a clean deploy the two match
+#            exactly; the webroot being ahead means somebody typed into it.
+#
+# Editing the SOURCE makes the source newer, which is the normal case and
+# deliberately does not trigger. VERSION is excluded — this script writes it.
+extra=$(comm -23 \
+    <(cd "$WEBROOT" && find . -type f | grep -vx './VERSION' | sort) \
+    <(cd "$REPO/$SRC" && find . -type f | sort))
+newer=$(cd "$WEBROOT" && find . -type f ! -name VERSION -print0 \
+        | while IFS= read -r -d '' f; do
+              # `if`, not `[[ … ]] && printf`: the && form returns 1 whenever the
+              # test is false, so the last file decides the exit status of the
+              # whole substitution and `set -e` kills the script. That failure
+              # blocked every deploy, not just hand-edited ones.
+              if [[ -f "$REPO/$SRC/$f" && "$f" -nt "$REPO/$SRC/$f" ]]; then
+                  printf '%s\n' "$f"
+              fi
+          done)
+
+if [[ -n "$extra$newer" && $FORCE -eq 0 ]]; then
+    echo "REFUSING: $WEBROOT looks edited by hand." >&2
+    [[ -n "$extra" ]] && { echo "  files served but not in $SRC/:" >&2
+                           printf '    %s\n' $extra >&2; }
+    [[ -n "$newer" ]] && { echo "  files newer than their $SRC/ copy:" >&2
+                           printf '    %s\n' $newer >&2; }
+    cat >&2 <<EOF
+
+Deploying would delete those. Copy anything worth keeping into $SRC/ first:
+    cp $WEBROOT/<file> $REPO/$SRC/<file>
+
+Then commit it. If they really are disposable, re-run with --force.
+EOF
     exit 1
 fi
 
@@ -43,7 +97,7 @@ cp -a "$REPO/$SRC/." "$WEBROOT/"
   echo "deployed: $(date -Is)"
 } > "$WEBROOT/VERSION"
 
-if [[ "${1:-}" != "--static" ]]; then
+if [[ $STATIC_ONLY -eq 0 ]]; then
     echo "==> restarting $SERVICE"
     sudo systemctl restart "$SERVICE"
     sleep 2
