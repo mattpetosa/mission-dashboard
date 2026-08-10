@@ -13,7 +13,7 @@ import json
 import math
 
 SRC = "ne_110m_admin_0_countries.geojson"  # from nvkelso/natural-earth-vector (public domain)
-OUT = "/var/www/mission.mhpserver.cc/assets/world.js"
+OUT = "/var/www/mission.mhpwebserver.com/assets/world.js"
 
 W, H = 2000.0, 1000.0          # full -180..180 / 90..-90 canvas
 TOLERANCE = 1.6                # RDP tolerance in projected units (~0.29 deg)

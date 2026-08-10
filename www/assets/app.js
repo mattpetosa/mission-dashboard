@@ -1,5 +1,5 @@
 /* ===================================================================
-   mission.mhpserver.cc — dashboard front end
+   mission.mhpwebserver.com — dashboard front end
    Talks to /api/data only; that endpoint is itself a cache of Launch
    Library 2, so polling here is cheap and never touches the upstream
    rate limit.

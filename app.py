@@ -1,5 +1,5 @@
 """
-mission.mhpserver.cc -- backend for the launch & active-mission dashboard.
+mission.mhpwebserver.com -- backend for the launch & active-mission dashboard.
 
 Serves one normalised JSON document assembled from Launch Library 2 (see
 ll2.py), plus a caching image proxy. Visitors never touch the upstream API or
