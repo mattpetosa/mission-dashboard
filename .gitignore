@@ -5,3 +5,8 @@ cache/
 venv/
 __pycache__/
 *.py[cod]
+
+# Hipparcos catalog, downloaded by tools/build_stars.py -- ~50MB source
+# data, not something the repo needs to track. Only its baked output,
+# www/assets/stars.js, is committed.
+hip_main.dat
