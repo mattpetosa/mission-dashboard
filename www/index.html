@@ -43,6 +43,7 @@
       <button class="tab" data-view="map">Launch map</button>
       <button class="tab" data-view="missions">Active missions</button>
       <button class="tab" data-view="operators">Operators</button>
+      <button class="tab" data-view="stars">Star tracker</button>
     </nav>
 
     <div class="sync" id="sync">
@@ -218,6 +219,56 @@
     <div class="op-grid" id="opGrid"></div>
   </section>
 
+  <!-- ── View: star tracker ───────────────────────────────────────────── -->
+  <section class="view" id="view-stars" aria-label="Star tracker" hidden>
+    <div class="view-head">
+      <h2 class="view-title">Star tracker</h2>
+      <p class="view-note">The naked-eye sky right now, from wherever you're standing — computed live client-side from Greenwich Sidereal Time, the same solar-geometry math behind the launch map's terminator. No sky-map service involved: 200 stars to roughly 5th magnitude and 21 traditional constellations, positions from the Hipparcos catalog.</p>
+    </div>
+
+    <form class="star-loc" id="starLocForm">
+      <button type="button" class="btn btn-primary" id="starLocateBtn">Use my location</button>
+      <div class="field-num">
+        <label for="starLat">Latitude</label>
+        <input type="number" id="starLat" step="0.001" min="-90" max="90" placeholder="e.g. 40.71" inputmode="decimal">
+      </div>
+      <div class="field-num">
+        <label for="starLon">Longitude</label>
+        <input type="number" id="starLon" step="0.001" min="-180" max="180" placeholder="e.g. -74.01" inputmode="decimal">
+      </div>
+      <button type="submit" class="btn btn-ghost">Set</button>
+    </form>
+
+    <p class="star-empty" id="starEmpty">Enter a latitude and longitude, or use your location, to render the sky above you.</p>
+
+    <div class="star-readout" id="starReadout" hidden>
+      <span class="lg"><span class="lg-lab">LST</span><span id="starLst">--:--</span></span>
+      <span class="lg"><span class="lg-lab">UTC</span><span id="starUtc">--:--</span></span>
+      <span class="lg"><span class="lg-lab">Observer</span><span id="starLoc">—</span></span>
+    </div>
+
+    <div class="star-wrap" id="starStage" hidden>
+      <div class="star-stage-inner">
+        <svg id="starChart" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="starTitle starDesc">
+          <title id="starTitle">Live sky chart</title>
+          <desc id="starDesc">Visible stars and constellations at the observer's current position, updated live.</desc>
+          <circle class="star-horizon" cx="500" cy="500" r="480"/>
+          <circle class="star-ring" cx="500" cy="500" r="320"/>
+          <circle class="star-ring" cx="500" cy="500" r="160"/>
+          <text class="star-compass" x="500" y="32">N</text>
+          <text class="star-compass" x="500" y="988">S</text>
+          <text class="star-compass" x="16" y="505">W</text>
+          <text class="star-compass" x="984" y="505">E</text>
+          <g id="starDome"></g>
+        </svg>
+      </div>
+      <div class="map-legend">
+        <span class="lg"><span class="lg-dot lg-site"></span>Named star</span>
+        <span class="lg lg-note">Zenith at centre · horizon at the rim</span>
+      </div>
+    </div>
+  </section>
+
   <div class="empty" id="globalEmpty" hidden>
     <p>Telemetry unavailable — the upstream launch database could not be reached. The dashboard will keep retrying.</p>
   </div>
@@ -247,6 +298,7 @@
 </div>
 
 <script src="/assets/world.js"></script>
+<script src="/assets/stars.js"></script>
 <script src="/assets/app.js"></script>
 </body>
 </html>
