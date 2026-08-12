@@ -858,11 +858,61 @@ img { max-width: 100%; display: block; }
 }
 @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 
+/* ── Star tracker ─────────────────────────────────────────────────── */
+
+.star-loc {
+  display: flex; gap: .75rem; flex-wrap: wrap; align-items: end;
+  padding: .85rem; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--hairline);
+}
+.field-num { flex: 0 1 150px; min-width: 120px; display: flex; flex-direction: column; gap: .3rem; }
+.field-num label { font-family: var(--mono); font-size: .66rem; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-3); }
+.field-num input {
+  width: 100%; font: inherit; font-size: .875rem; color: var(--ink);
+  background: rgba(4,7,18,.7); border: 1px solid var(--hairline);
+  border-radius: 9px; padding: .55rem .7rem;
+}
+.field-num input:focus { border-color: var(--hairline-2); outline-offset: 1px; }
+
+.star-empty { color: var(--ink-3); font-size: .86rem; font-family: var(--mono); margin-top: 1rem; }
+.star-empty[hidden] { display: none; }
+
+.star-readout {
+  display: flex; gap: 1.5rem; flex-wrap: wrap; margin-top: 1rem;
+  font-family: var(--mono); font-size: .82rem;
+}
+.star-readout[hidden] { display: none; }
+.star-readout .lg-lab { color: var(--ink-3); text-transform: uppercase; font-size: .66rem; letter-spacing: .12em; margin-right: .45rem; }
+
+.star-wrap {
+  margin-top: 1rem; border-radius: var(--radius-lg); overflow: hidden;
+  border: 1px solid var(--hairline-2); background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.star-wrap[hidden] { display: none; }
+.star-stage-inner { background: #02040c; }
+#starChart { display: block; width: 100%; height: auto; }
+
+.star-horizon { fill: #050a17; stroke: var(--hairline-2); stroke-width: 2; }
+.star-ring { fill: none; stroke: rgba(92,225,255,.10); stroke-width: 1; }
+.star-compass {
+  fill: var(--ink-3); font-family: var(--mono); font-size: 22px;
+  text-anchor: middle; dominant-baseline: middle;
+}
+
+.star-line { stroke: rgba(92,225,255,.32); stroke-width: 1.2; }
+.star-pt circle { fill: var(--ink-2); }
+.star-pt.is-named circle { fill: #fff; filter: drop-shadow(0 0 4px rgba(255,255,255,.7)); }
+.star-pt text {
+  fill: var(--ink-2); font-size: 15px; font-family: var(--sans);
+  pointer-events: none; paint-order: stroke; stroke: #02040c; stroke-width: 3px;
+}
+
 /* ── Responsive ───────────────────────────────────────────────────── */
 
 @media (max-width: 900px) {
   .topbar-inner { flex-wrap: wrap; gap: .75rem; }
-  /* Four tabs no longer fit on a phone, so the strip scrolls. Hide the
+  /* Five tabs no longer fit on a phone, so the strip scrolls. Hide the
      scrollbar itself -- the default one paints as a bright bar across the
      dark chrome -- while keeping the strip swipeable. */
   .tabs {
