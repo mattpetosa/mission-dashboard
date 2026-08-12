@@ -916,9 +916,25 @@
 
   var RAD = Math.PI / 180;
 
+  // Days since the J2000.0 epoch -- shared by every low-precision almanac
+  // formula below (good to ~0.01 deg, far beyond what a 600px-wide map or a
+  // naked-eye star chart can show).
+  function daysSinceJ2000(date) {
+    return date.getTime() / 86400000.0 + 2440587.5 - 2451545.0;
+  }
+
+  // Greenwich Mean Sidereal Time, in hours. Also used by the star tracker's
+  // RA/Dec -> alt/az transform (equatorialToHorizontal below) to get Local
+  // Sidereal Time, so both features stay in agreement by construction.
+  function gmstHours(date) {
+    var n = daysSinceJ2000(date);
+    var h = (18.697374558 + 24.06570982441908 * n) % 24;
+    if (h < 0) h += 24;
+    return h;
+  }
+
   function solarPosition(date) {
-    // Days since the J2000.0 epoch.
-    var n = date.getTime() / 86400000.0 + 2440587.5 - 2451545.0;
+    var n = daysSinceJ2000(date);
     var L = (280.460 + 0.9856474 * n) % 360;          // mean longitude
     var g = ((357.528 + 0.9856003 * n) % 360) * RAD;  // mean anomaly
     var lambda = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * RAD;
@@ -927,10 +943,7 @@
     var dec = Math.asin(Math.sin(eps) * Math.sin(lambda)) / RAD;
     var ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda)) / RAD;
 
-    var gmstHours = (18.697374558 + 24.06570982441908 * n) % 24;
-    if (gmstHours < 0) gmstHours += 24;
-
-    var lon = ra - gmstHours * 15;
+    var lon = ra - gmstHours(date) * 15;
     lon = ((lon + 540) % 360) - 180;  // normalise to [-180, 180)
     return { lat: dec, lon: lon };
   }
@@ -1151,6 +1164,195 @@
     }).join("");
 
     tickList();
+  }
+
+  /* ── Star tracker ────────────────────────────────────────────────────
+     Client-side only -- no /api/ route, no third-party sky-map service.
+     Reuses solar-position's gmstHours() to get Local Sidereal Time, then
+     the standard hour-angle transform to project each catalog star's
+     RA/Dec to altitude/azimuth for the observer's position right now.
+     Catalog (positions + magnitudes: ESA Hipparcos, public domain;
+     constellation groupings: this project's own choice) is baked ahead of
+     time by tools/build_stars.py into assets/stars.js. */
+
+  var DOME_R = 480, DOME_CX = 500, DOME_CY = 500;
+  var STAR_LOC_KEY = "mission-dashboard:observer";
+
+  function loadObserver() {
+    try {
+      var raw = localStorage.getItem(STAR_LOC_KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (typeof o.lat === "number" && typeof o.lon === "number") return o;
+    } catch (e) { /* ignore malformed/unavailable storage */ }
+    return null;
+  }
+
+  function saveObserver(o) {
+    try { localStorage.setItem(STAR_LOC_KEY, JSON.stringify(o)); } catch (e) { /* private mode etc. */ }
+  }
+
+  function observerFromQuery() {
+    var params = new URLSearchParams(location.search);
+    var lat = parseFloat(params.get("lat")), lon = parseFloat(params.get("lon"));
+    if (isFinite(lat) && isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      return { lat: lat, lon: lon };
+    }
+    return null;
+  }
+
+  // A shareable ?lat=&lon= link (e.g. from someone pointing at a specific
+  // sky) wins over whatever was remembered from a previous visit.
+  state.observer = observerFromQuery() || loadObserver();
+
+  function equatorialToHorizontal(raDeg, decDeg, latDeg, lonDeg, date) {
+    var lst = (gmstHours(date) + lonDeg / 15) % 24;
+    if (lst < 0) lst += 24;
+    var H = (lst * 15 - raDeg) * RAD;
+    var dec = decDeg * RAD, lat = latDeg * RAD;
+
+    var sinAlt = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(lat) * Math.cos(H);
+    var alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+
+    var cosAz = (Math.sin(dec) - Math.sin(alt) * Math.sin(lat)) / (Math.cos(alt) * Math.cos(lat));
+    var az = Math.acos(Math.max(-1, Math.min(1, cosAz)));
+    if (Math.sin(H) > 0) az = 2 * Math.PI - az;
+
+    return { alt: alt / RAD, az: az / RAD, lst: lst };
+  }
+
+  // Zenith at the dome's centre, horizon at its rim; azimuth 0=N measured
+  // clockwise (compass convention), matching the readout and the N/E/S/W
+  // labels drawn once in index.html.
+  function domeProject(altDeg, azDeg) {
+    var r = (90 - altDeg) / 90 * DOME_R;
+    var a = (azDeg - 90) * RAD; // rotate so North points up
+    return { x: DOME_CX + r * Math.cos(a), y: DOME_CY + r * Math.sin(a) };
+  }
+
+  function starRadius(mag) {
+    // Brighter (lower/negative magnitude) stars draw bigger; floor keeps the
+    // faintest catalog entries from disappearing to sub-pixel dots.
+    var r = 3.6 - mag * 0.55;
+    return Math.max(0.6, Math.min(6, r));
+  }
+
+  function renderStars() {
+    var host = $("#starDome");
+    var stage = $("#starStage");
+    var empty = $("#starEmpty");
+    var readout = $("#starReadout");
+    if (!host) return;
+
+    var obs = state.observer;
+    if (!obs) {
+      if (stage) stage.hidden = true;
+      if (empty) empty.hidden = false;
+      if (readout) readout.hidden = true;
+      return;
+    }
+    if (empty) empty.hidden = true;
+    if (stage) stage.hidden = false;
+
+    var catalog = window.STAR_CATALOG;
+    if (!catalog) return;
+
+    var now = new Date();
+    var positions = catalog.stars.map(function (s) {
+      return equatorialToHorizontal(s.ra, s.dec, obs.lat, obs.lon, now);
+    });
+
+    if (readout) {
+      readout.hidden = false;
+      var lstHours = positions.length ? positions[0].lst : (gmstHours(now) + obs.lon / 15 + 24) % 24;
+      var h = Math.floor(lstHours), m = Math.floor((lstHours - h) * 60);
+      $("#starLst").textContent = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+      $("#starUtc").textContent = now.toISOString().slice(11, 16) + " UTC";
+      $("#starLoc").textContent = obs.lat.toFixed(2) + "°, " + obs.lon.toFixed(2) + "°";
+    }
+
+    host.innerHTML = "";
+    var frag = document.createDocumentFragment();
+
+    // Constellation lines first, so star markers draw on top of them.
+    (catalog.constellations || []).forEach(function (c) {
+      c.lines.forEach(function (pair) {
+        var a = positions[pair[0]], b = positions[pair[1]];
+        if (a.alt <= 0 || b.alt <= 0) return; // don't draw below the horizon
+        var pa = domeProject(a.alt, a.az), pb = domeProject(b.alt, b.az);
+        frag.appendChild(svgEl("line", {
+          x1: pa.x.toFixed(1), y1: pa.y.toFixed(1), x2: pb.x.toFixed(1), y2: pb.y.toFixed(1),
+          class: "star-line"
+        }));
+      });
+    });
+
+    catalog.stars.forEach(function (s, i) {
+      var p = positions[i];
+      if (p.alt <= 0) return;
+      var pt = domeProject(p.alt, p.az);
+      var g = svgEl("g", { class: "star-pt" + (s.name ? " is-named" : "") });
+      g.appendChild(svgEl("circle", { cx: pt.x.toFixed(1), cy: pt.y.toFixed(1), r: starRadius(s.mag).toFixed(2) }));
+      if (s.name) {
+        var label = svgEl("text", { x: (pt.x + 7).toFixed(1), y: (pt.y - 5).toFixed(1) });
+        label.textContent = s.name;
+        g.appendChild(label);
+      } else {
+        var t = svgEl("title", {});
+        t.textContent = "mag " + s.mag.toFixed(1);
+        g.appendChild(t);
+      }
+      frag.appendChild(g);
+    });
+
+    host.appendChild(frag);
+  }
+
+  function setObserver(lat, lon) {
+    if (!isFinite(lat) || !isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
+    state.observer = { lat: lat, lon: lon };
+    saveObserver(state.observer);
+    var latIn = $("#starLat"), lonIn = $("#starLon");
+    if (latIn) latIn.value = lat.toFixed(3);
+    if (lonIn) lonIn.value = lon.toFixed(3);
+    renderStars();
+  }
+
+  function wireStarTracker() {
+    var locateBtn = $("#starLocateBtn");
+    if (locateBtn) {
+      locateBtn.addEventListener("click", function () {
+        if (!navigator.geolocation) return;
+        locateBtn.disabled = true;
+        locateBtn.textContent = "Locating…";
+        navigator.geolocation.getCurrentPosition(
+          function (pos) {
+            locateBtn.disabled = false;
+            locateBtn.textContent = "Use my location";
+            setObserver(pos.coords.latitude, pos.coords.longitude);
+          },
+          function () {
+            locateBtn.disabled = false;
+            locateBtn.textContent = "Use my location";
+          },
+          { timeout: 10000 }
+        );
+      });
+    }
+
+    var form = $("#starLocForm");
+    if (form) {
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        setObserver(parseFloat($("#starLat").value), parseFloat($("#starLon").value));
+      });
+    }
+
+    if (state.observer) {
+      var latIn = $("#starLat"), lonIn = $("#starLon");
+      if (latIn) latIn.value = state.observer.lat.toFixed(3);
+      if (lonIn) lonIn.value = state.observer.lon.toFixed(3);
+    }
   }
 
   /* ── Modal ───────────────────────────────────────────────────────── */
@@ -1379,18 +1581,21 @@
   function boot() {
     starfield();
     wire();
+    wireStarTracker();
 
     var hash = (location.hash || "").replace("#", "");
-    if (["launches", "map", "missions", "operators"].indexOf(hash) !== -1) setView(hash);
+    if (["launches", "map", "missions", "operators", "stars"].indexOf(hash) !== -1) setView(hash);
 
     $("#launchList").innerHTML = new Array(5).join("x").split("x")
       .map(function () { return '<div class="skeleton"></div>'; }).join("");
 
     load();
+    renderStars();
     setInterval(function () { if (!document.hidden) load(); }, POLL_MS);
     setInterval(function () { tickHero(); tickStream(); tickList(); }, 1000);
     setInterval(updateSync, 30000);
     setInterval(function () { if (!document.hidden) updateTerminator(); }, 60000);
+    setInterval(function () { if (!document.hidden) renderStars(); }, 30000);
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
