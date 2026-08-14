@@ -943,3 +943,30 @@ img { max-width: 100%; display: block; }
   }
   .neb { animation: none; }
 }
+
+/* ── Touch targets on phones (2026-08-14) ──────────────────────────────
+   These controls were sized for a pointer and land between 31px and 38px
+   tall, under the ~44px a thumb reliably hits: the view tabs, the operator
+   chips, the segmented filter and the brand link. Sizing only, at the
+   existing phone breakpoint, so the desktop layout is untouched.
+
+   Deliberately NOT touched: the launch-map site markers. `.site-hit` is
+   sized in viewBox units, so at 390px the map renders 364px wide and the
+   two closest sites sit 5.2px apart (12.2px even at 900px). No 44px
+   target can exist there without swallowing its neighbours — reaching a
+   site on a phone needs a list affordance, not a bigger circle. */
+.tab, .chip, .seg-btn, .brand { touch-action: manipulation; }
+
+@media (max-width: 620px) {
+  .tab,
+  .chip,
+  .seg-btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* "All" is only 38px of text wide — a short label still needs a target. */
+  .seg-btn { min-width: 44px; }
+  .brand { min-height: 44px; }
+}
