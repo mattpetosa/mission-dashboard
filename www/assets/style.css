@@ -100,7 +100,7 @@ img { max-width: 100%; display: block; }
 }
 
 .nebula { position: fixed; inset: 0; z-index: -2; pointer-events: none; overflow: hidden; }
-.neb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .5; }
+.neb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .5; will-change: transform; }
 .neb-a {
   width: 60vw; height: 60vw; top: -22vw; left: -14vw;
   background: radial-gradient(circle, rgba(70,110,255,.42), transparent 68%);
@@ -116,9 +116,12 @@ img { max-width: 100%; display: block; }
   background: radial-gradient(circle, rgba(92,225,255,.20), transparent 70%);
   animation: drift 74s ease-in-out infinite alternate;
 }
+/* Translate only. Scaling an element with filter: blur(90px) forces the
+   browser to re-run that very large convolution as the element resizes, so the
+   blur can never be cached; a pure translate is a compositor move. */
 @keyframes drift {
-  from { transform: translate3d(0,0,0) scale(1); }
-  to   { transform: translate3d(3vw, 4vh, 0) scale(1.12); }
+  from { transform: translate3d(0,0,0); }
+  to   { transform: translate3d(3vw, 4vh, 0); }
 }
 
 /* A faint receding grid at the very bottom — reads as a horizon without

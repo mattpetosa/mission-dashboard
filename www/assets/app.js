@@ -58,7 +58,10 @@
 
       // Three parallax layers: far stars are dim, small and nearly still.
       stars = [];
-      var count = Math.round(Math.min(w * h / 5200, 620));
+      // Each star costs a beginPath/arc/fill plus, previously, a freshly built
+      // rgba() string every frame. 620 of those was the most expensive
+      // background on the estate; 300 reads the same at a third of the cost.
+      var count = Math.round(Math.min(w * h / 9000, 300));
       for (var i = 0; i < count; i++) {
         var layer = i % 3;
         stars.push({
@@ -74,6 +77,18 @@
       }
     }
 
+    // rgba() strings are cached per (hue, quantised alpha) pair.
+    var _colorCache = Object.create(null);
+    function starColor(hue, alpha) {
+      var q = alpha < 0 ? 0 : alpha > 1 ? 32 : (alpha * 32) | 0;
+      var key = hue + "|" + q;
+      var c = _colorCache[key];
+      if (c === undefined) {
+        c = _colorCache[key] = "rgba(" + hue + "," + (q / 32).toFixed(3) + ")";
+      }
+      return c;
+    }
+
     function draw(t) {
       ctx.clearRect(0, 0, w, h);
       for (var i = 0; i < stars.length; i++) {
@@ -81,7 +96,9 @@
         var alpha = reduced ? s.a : s.a * (0.68 + 0.32 * Math.sin(t / 1000 * s.tws + s.tw));
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(" + s.hue + "," + alpha.toFixed(3) + ")";
+        // Quantise alpha to 32 steps and reuse a cached string: visually
+        // identical, but skips building and parsing a colour per star per frame.
+        ctx.fillStyle = starColor(s.hue, alpha);
         ctx.fill();
         if (!reduced) {
           s.x += s.vx;
