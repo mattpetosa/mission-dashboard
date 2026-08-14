@@ -1087,7 +1087,39 @@
     });
 
     host.appendChild(frag);
+    renderSiteList(clusters, nextId);
     renderSitePanel();
+  }
+
+  /* The phone route into the map. A marker cannot be given a thumb-sized hit
+     area here -- the two closest clusters are about 5px apart at 390px wide,
+     so a 44px target would cover its neighbours -- so the same clusters are
+     offered as a list instead. Selection is deliberately the identical
+     toggle the markers use, against the same state.site, so the two controls
+     stay in lockstep however you arrived. */
+  function renderSiteList(clusters, nextId) {
+    var host = $("#siteListItems");
+    if (!host) return;
+
+    // Soonest launch first; sites with nothing booked sink to the bottom.
+    var ordered = clusters.slice().sort(function (a, b) {
+      return (a.next_net || "9999") < (b.next_net || "9999") ? -1 : 1;
+    });
+
+    host.innerHTML = ordered.map(function (c) {
+      var selected = state.site === c.id;
+      return '<button type="button" class="site-list-item' +
+          (selected ? " is-selected" : "") + (c.id === nextId ? " is-next" : "") +
+          '" data-site="' + esc(c.id) + '" aria-pressed="' + (selected ? "true" : "false") + '">' +
+        '<span class="sl-main">' +
+          '<span class="sl-name">' + esc(c.label) + "</span>" +
+          '<span class="sl-meta">' + c.count + " scheduled" +
+            (c.padCount ? " · " + c.padCount + (c.padCount === 1 ? " pad" : " pads") : "") +
+          "</span>" +
+        "</span>" +
+        '<span class="sl-cd l-cd" data-net="' + esc(c.next_net || "") + '">—</span>' +
+      "</button>";
+    }).join("");
   }
 
   function mapTipFor(cluster, target) {
@@ -1119,6 +1151,24 @@
   function hideMapTip() {
     var tip = $("#mapTip");
     if (tip) tip.hidden = true;
+  }
+
+  function scrollSitePanelIntoView() {
+    var panel = $("#sitePanel");
+    if (!panel) return;
+    var box = panel.getBoundingClientRect();
+    if (box.top >= 0 && box.top < window.innerHeight * 0.8) return; // already in sight
+
+    // scrollIntoView would tuck the heading under the sticky topbar, which is
+    // two rows tall once the tabs wrap on a phone -- so measure it rather than
+    // guessing a scroll-margin.
+    var bar = $(".topbar");
+    var offset = bar ? bar.getBoundingClientRect().height : 0;
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.scrollTo({
+      top: box.top + window.pageYOffset - offset - 12,
+      behavior: reduce ? "auto" : "smooth"
+    });
   }
 
   function renderSitePanel() {
@@ -1507,6 +1557,17 @@
       if (hit && hit.__cluster) {
         state.site = state.site === hit.__cluster.id ? null : hit.__cluster.id;
         renderMap();
+        return;
+      }
+
+      var row = e.target.closest(".site-list-item");
+      if (row) {
+        var id = row.getAttribute("data-site");
+        state.site = state.site === id ? null : id;
+        renderMap();
+        // The detail lands below a list that can be a screenful on a phone,
+        // so bring it into view -- but only on select, never on deselect.
+        if (state.site) scrollSitePanelIntoView();
         return;
       }
 

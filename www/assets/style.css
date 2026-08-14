@@ -661,6 +661,39 @@ img { max-width: 100%; display: block; }
 .lg-site { background: var(--accent); color: var(--accent); }
 .lg-swatch { width: 16px; height: 9px; border-radius: 3px; background: #0a1120; border: 1px solid var(--hairline-2); }
 
+/* ── Site list (phone route into the map) ─────────────────────────────
+   Hidden by default: on a wide screen the markers are far enough apart to
+   aim at, and the list would just repeat them. It appears at the phone
+   breakpoint below, where the markers are physically untappable. */
+.site-list { display: none; }
+.site-list-title {
+  font-size: .74rem; font-weight: 550; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); margin: 1rem 0 .5rem;
+}
+.site-list-items { display: flex; flex-direction: column; gap: .4rem; }
+.site-list-item {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  width: 100%; min-height: 44px; padding: .6rem .85rem;
+  text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  transition: border-color .18s, background .18s;
+}
+.site-list-item:hover { border-color: var(--hairline-2); background: var(--surface-2); }
+.site-list-item.is-selected {
+  border-color: var(--accent); background: var(--accent-dim);
+}
+/* Matches the map's white pulse marker: same meaning, same colour. */
+.site-list-item.is-next .sl-name::after {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-left: .45rem;
+  border-radius: 50%; background: #fff; box-shadow: 0 0 10px -1px #fff;
+  vertical-align: middle;
+}
+.sl-main { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.sl-name { font-size: .88rem; font-weight: 550; overflow-wrap: anywhere; }
+.sl-meta { font-family: var(--mono); font-size: .68rem; color: var(--ink-3); }
+.sl-cd { font-family: var(--mono); font-size: .72rem; color: var(--ink-2); flex: 0 0 auto; }
+
 .site-panel { margin-top: 1rem; }
 .site-empty { color: var(--ink-3); font-size: .86rem; font-family: var(--mono); }
 .site-empty[hidden] { display: none; }
@@ -674,6 +707,8 @@ img { max-width: 100%; display: block; }
 @media (max-width: 620px) {
   .map-legend { gap: .75rem; }
   .lg-note { margin-left: 0; }
+  /* The markers stop being aimable around here, so the list takes over. */
+  .site-list { display: block; }
 }
 
 /* ── Crew / active missions ───────────────────────────────────────── */
@@ -950,11 +985,12 @@ img { max-width: 100%; display: block; }
    chips, the segmented filter and the brand link. Sizing only, at the
    existing phone breakpoint, so the desktop layout is untouched.
 
-   Deliberately NOT touched: the launch-map site markers. `.site-hit` is
-   sized in viewBox units, so at 390px the map renders 364px wide and the
-   two closest sites sit 5.2px apart (12.2px even at 900px). No 44px
-   target can exist there without swallowing its neighbours — reaching a
-   site on a phone needs a list affordance, not a bigger circle. */
+   The launch-map site markers are the exception and stay small on
+   purpose: `.site-hit` is sized in viewBox units, so at 390px the map
+   renders 364px wide and the two closest sites sit 5.2px apart (12.2px
+   even at 900px). No 44px target can exist there without swallowing its
+   neighbours, so the phone gets `.site-list` instead — same clusters,
+   same `state.site` toggle, rows you can actually hit. */
 .tab, .chip, .seg-btn, .brand { touch-action: manipulation; }
 
 @media (max-width: 620px) {
