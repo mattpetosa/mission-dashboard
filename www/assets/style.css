@@ -183,7 +183,20 @@ img { max-width: 100%; display: block; }
   box-shadow: 0 0 24px -6px rgba(92,225,255,.75);
 }
 
-.sync { display: flex; align-items: center; gap: .5rem; font-family: var(--mono); font-size: .72rem; color: var(--ink-3); flex: 0 0 auto; }
+/* Back to the estate. This dashboard had no link off-site at all -- the five
+   header tabs only switch views -- so the only way out was the browser's back
+   button. Sits between the tabs and the telemetry readout. */
+.home-link {
+  flex: 0 0 auto;
+  font-family: var(--mono); font-size: .72rem; letter-spacing: .04em;
+  text-decoration: none; color: var(--ink-3);
+  border: 1px solid var(--hairline); border-radius: 8px; padding: .4rem .7rem;
+  white-space: nowrap;
+}
+.home-link:hover { color: var(--ink); border-color: var(--hairline-2); }
+
+.sync { display: flex; align-items: center; gap: .5rem; font-family: var(--mono); font-size: .72rem; color: var(--ink-3); flex: 0 1 auto; min-width: 0; }
+.sync-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pulse {
   width: 8px; height: 8px; border-radius: 50%; background: var(--good);
   box-shadow: 0 0 0 0 rgba(12,163,12,.7); animation: pulse 2.4s ease-out infinite;
@@ -948,7 +961,11 @@ img { max-width: 100%; display: block; }
 
 /* ── Responsive ───────────────────────────────────────────────────── */
 
-@media (max-width: 900px) {
+/* Raised from 900px: brand + five tabs + telemetry never actually fit on one
+   line below ~1150px, so between 900 and 1150 the bar overflowed and the page
+   scrolled sideways (85px at 1024px, before the Home link was even added).
+   Wrap the tab strip onto its own line as soon as the row stops fitting. */
+@media (max-width: 1150px) {
   .topbar-inner { flex-wrap: wrap; gap: .75rem; }
   /* Five tabs no longer fit on a phone, so the strip scrolls. Hide the
      scrollbar itself -- the default one paints as a bright bar across the
@@ -958,7 +975,8 @@ img { max-width: 100%; display: block; }
     scrollbar-width: none; -ms-overflow-style: none;
   }
   .tabs::-webkit-scrollbar { display: none; }
-  .sync { margin-left: auto; }
+  .home-link { margin-left: auto; }
+  .sync { margin-left: 0; }
   .toolbar { top: 116px; }
 }
 
