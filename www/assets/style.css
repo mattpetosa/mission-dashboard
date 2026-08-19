@@ -100,7 +100,7 @@ img { max-width: 100%; display: block; }
 }
 
 .nebula { position: fixed; inset: 0; z-index: -2; pointer-events: none; overflow: hidden; }
-.neb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .5; }
+.neb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: .5; will-change: transform; }
 .neb-a {
   width: 60vw; height: 60vw; top: -22vw; left: -14vw;
   background: radial-gradient(circle, rgba(70,110,255,.42), transparent 68%);
@@ -116,9 +116,12 @@ img { max-width: 100%; display: block; }
   background: radial-gradient(circle, rgba(92,225,255,.20), transparent 70%);
   animation: drift 74s ease-in-out infinite alternate;
 }
+/* Translate only. Scaling an element with filter: blur(90px) forces the
+   browser to re-run that very large convolution as the element resizes, so the
+   blur can never be cached; a pure translate is a compositor move. */
 @keyframes drift {
-  from { transform: translate3d(0,0,0) scale(1); }
-  to   { transform: translate3d(3vw, 4vh, 0) scale(1.12); }
+  from { transform: translate3d(0,0,0); }
+  to   { transform: translate3d(3vw, 4vh, 0); }
 }
 
 /* A faint receding grid at the very bottom — reads as a horizon without
@@ -180,7 +183,20 @@ img { max-width: 100%; display: block; }
   box-shadow: 0 0 24px -6px rgba(92,225,255,.75);
 }
 
-.sync { display: flex; align-items: center; gap: .5rem; font-family: var(--mono); font-size: .72rem; color: var(--ink-3); flex: 0 0 auto; }
+/* Back to the estate. This dashboard had no link off-site at all -- the five
+   header tabs only switch views -- so the only way out was the browser's back
+   button. Sits between the tabs and the telemetry readout. */
+.home-link {
+  flex: 0 0 auto;
+  font-family: var(--mono); font-size: .72rem; letter-spacing: .04em;
+  text-decoration: none; color: var(--ink-3);
+  border: 1px solid var(--hairline); border-radius: 8px; padding: .4rem .7rem;
+  white-space: nowrap;
+}
+.home-link:hover { color: var(--ink); border-color: var(--hairline-2); }
+
+.sync { display: flex; align-items: center; gap: .5rem; font-family: var(--mono); font-size: .72rem; color: var(--ink-3); flex: 0 1 auto; min-width: 0; }
+.sync-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pulse {
   width: 8px; height: 8px; border-radius: 50%; background: var(--good);
   box-shadow: 0 0 0 0 rgba(12,163,12,.7); animation: pulse 2.4s ease-out infinite;
@@ -661,6 +677,39 @@ img { max-width: 100%; display: block; }
 .lg-site { background: var(--accent); color: var(--accent); }
 .lg-swatch { width: 16px; height: 9px; border-radius: 3px; background: #0a1120; border: 1px solid var(--hairline-2); }
 
+/* ── Site list (phone route into the map) ─────────────────────────────
+   Hidden by default: on a wide screen the markers are far enough apart to
+   aim at, and the list would just repeat them. It appears at the phone
+   breakpoint below, where the markers are physically untappable. */
+.site-list { display: none; }
+.site-list-title {
+  font-size: .74rem; font-weight: 550; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); margin: 1rem 0 .5rem;
+}
+.site-list-items { display: flex; flex-direction: column; gap: .4rem; }
+.site-list-item {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  width: 100%; min-height: 44px; padding: .6rem .85rem;
+  text-align: left; font: inherit; color: inherit; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  transition: border-color .18s, background .18s;
+}
+.site-list-item:hover { border-color: var(--hairline-2); background: var(--surface-2); }
+.site-list-item.is-selected {
+  border-color: var(--accent); background: var(--accent-dim);
+}
+/* Matches the map's white pulse marker: same meaning, same colour. */
+.site-list-item.is-next .sl-name::after {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-left: .45rem;
+  border-radius: 50%; background: #fff; box-shadow: 0 0 10px -1px #fff;
+  vertical-align: middle;
+}
+.sl-main { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.sl-name { font-size: .88rem; font-weight: 550; overflow-wrap: anywhere; }
+.sl-meta { font-family: var(--mono); font-size: .68rem; color: var(--ink-3); }
+.sl-cd { font-family: var(--mono); font-size: .72rem; color: var(--ink-2); flex: 0 0 auto; }
+
 .site-panel { margin-top: 1rem; }
 .site-empty { color: var(--ink-3); font-size: .86rem; font-family: var(--mono); }
 .site-empty[hidden] { display: none; }
@@ -674,6 +723,8 @@ img { max-width: 100%; display: block; }
 @media (max-width: 620px) {
   .map-legend { gap: .75rem; }
   .lg-note { margin-left: 0; }
+  /* The markers stop being aimable around here, so the list takes over. */
+  .site-list { display: block; }
 }
 
 /* ── Crew / active missions ───────────────────────────────────────── */
@@ -910,7 +961,11 @@ img { max-width: 100%; display: block; }
 
 /* ── Responsive ───────────────────────────────────────────────────── */
 
-@media (max-width: 900px) {
+/* Raised from 900px: brand + five tabs + telemetry never actually fit on one
+   line below ~1150px, so between 900 and 1150 the bar overflowed and the page
+   scrolled sideways (85px at 1024px, before the Home link was even added).
+   Wrap the tab strip onto its own line as soon as the row stops fitting. */
+@media (max-width: 1150px) {
   .topbar-inner { flex-wrap: wrap; gap: .75rem; }
   /* Five tabs no longer fit on a phone, so the strip scrolls. Hide the
      scrollbar itself -- the default one paints as a bright bar across the
@@ -920,7 +975,8 @@ img { max-width: 100%; display: block; }
     scrollbar-width: none; -ms-overflow-style: none;
   }
   .tabs::-webkit-scrollbar { display: none; }
-  .sync { margin-left: auto; }
+  .home-link { margin-left: auto; }
+  .sync { margin-left: 0; }
   .toolbar { top: 116px; }
 }
 
@@ -942,4 +998,32 @@ img { max-width: 100%; display: block; }
     transition-duration: .001ms !important; scroll-behavior: auto !important;
   }
   .neb { animation: none; }
+}
+
+/* ── Touch targets on phones (2026-08-14) ──────────────────────────────
+   These controls were sized for a pointer and land between 31px and 38px
+   tall, under the ~44px a thumb reliably hits: the view tabs, the operator
+   chips, the segmented filter and the brand link. Sizing only, at the
+   existing phone breakpoint, so the desktop layout is untouched.
+
+   The launch-map site markers are the exception and stay small on
+   purpose: `.site-hit` is sized in viewBox units, so at 390px the map
+   renders 364px wide and the two closest sites sit 5.2px apart (12.2px
+   even at 900px). No 44px target can exist there without swallowing its
+   neighbours, so the phone gets `.site-list` instead — same clusters,
+   same `state.site` toggle, rows you can actually hit. */
+.tab, .chip, .seg-btn, .brand { touch-action: manipulation; }
+
+@media (max-width: 620px) {
+  .tab,
+  .chip,
+  .seg-btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* "All" is only 38px of text wide — a short label still needs a target. */
+  .seg-btn { min-width: 44px; }
+  .brand { min-height: 44px; }
 }
