@@ -281,15 +281,25 @@ def _coord(value):
 
 
 def _img(obj, prefer_thumb=False):
-    """LL2 image objects vary by response mode; some are plain strings."""
+    """LL2 image objects vary by response mode; some are plain strings.
+
+    Every candidate goes through _proxyable(), the same allowlist app.py's
+    image proxy enforces. Only stream posters used to be checked, so any launch
+    image, agency logo, crew portrait or spacecraft photo LL2 served from a
+    host that isn't on the list was published in the payload and then 403ed by
+    our own proxy -- a broken image box where there should be a graceful
+    fallback. Refusing to emit it lets the client's placeholder do its job.
+    """
     if not obj:
         return None
     if isinstance(obj, str):
-        return obj or None
+        return _proxyable(obj)
     if isinstance(obj, dict):
-        if prefer_thumb:
-            return obj.get("thumbnail_url") or obj.get("image_url") or None
-        return obj.get("image_url") or obj.get("thumbnail_url") or None
+        keys = ("thumbnail_url", "image_url") if prefer_thumb else ("image_url", "thumbnail_url")
+        for key in keys:
+            url = _proxyable(obj.get(key))
+            if url:
+                return url
     return None
 
 
