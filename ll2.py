@@ -94,16 +94,27 @@ class FeedStore:
         return os.path.join(CACHE_DIR, f"{name}.json")
 
     def _load_from_disk(self):
+        now = time.time()
         for name in FEEDS:
             try:
                 with open(self._path(name), "r", encoding="utf-8") as fh:
                     blob = json.load(fh)
+                # Backoff state survives a restart. Without that, a process
+                # that crash-loops (or is restarted by hand while LL2 is
+                # rate-limiting us) starts every life with a clean slate and
+                # fires a fresh burst of requests at an endpoint that is
+                # already refusing them -- the one thing the shared 15/hour
+                # budget cannot afford.
+                failures = int(blob.get("failures") or 0)
+                next_try = float(blob.get("next_try") or 0)
                 self._feeds[name] = {
-                    "data": blob["data"],
+                    "data": blob.get("data"),
                     "fetched_at": blob.get("fetched_at", 0),
-                    "failures": 0,
-                    "next_try": 0,
-                    "error": None,
+                    "failures": failures,
+                    # Clamped: a bad clock or a hand-edited cache must not be
+                    # able to park a feed for longer than the normal maximum.
+                    "next_try": min(next_try, now + BACKOFF_MAX),
+                    "error": blob.get("error"),
                 }
                 log.info("loaded cached feed %s from disk", name)
             except FileNotFoundError:
@@ -115,7 +126,16 @@ class FeedStore:
         tmp = self._path(name) + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump({"fetched_at": entry["fetched_at"], "data": entry["data"]}, fh)
+                json.dump(
+                    {
+                        "fetched_at": entry["fetched_at"],
+                        "failures": entry.get("failures", 0),
+                        "next_try": entry.get("next_try", 0),
+                        "error": entry.get("error"),
+                        "data": entry["data"],
+                    },
+                    fh,
+                )
             os.replace(tmp, self._path(name))
         except Exception as exc:
             log.warning("could not persist feed %s: %s", name, exc)
@@ -159,7 +179,11 @@ class FeedStore:
                 entry["error"] = str(exc)
                 delay = min(BACKOFF_BASE * (2 ** (entry["failures"] - 1)), BACKOFF_MAX)
                 entry["next_try"] = time.time() + delay
+                snapshot = dict(entry)
             log.warning("feed %s failed (%s); retrying in %ds", name, exc, int(delay))
+            # Persisted so the backoff outlives the process, including for a
+            # feed that has never once succeeded (data stays null).
+            self._save_to_disk(name, snapshot)
             return False
 
         entry = {"data": data, "fetched_at": time.time(), "failures": 0, "next_try": 0, "error": None}
@@ -208,7 +232,9 @@ def start_refresher(store):
     """
 
     def loop():
-        # Prime whatever is missing first, most important feed first.
+        # Prime whatever is missing first, most important feed first. refresh()
+        # honours the persisted next_try, so a restart during an outage does not
+        # replay this burst.
         for name in ("upcoming", "astronauts", "spacecraft", "stations", "previous"):
             feeds, _ = store.snapshot()
             if not (feeds.get(name) or {}).get("data"):
@@ -269,15 +295,20 @@ def _duration(value):
     return text
 
 
-def _coord(value):
-    """Coordinates arrive as floats or as strings depending on the endpoint."""
+def _coord(value, limit=180.0):
+    """Coordinates arrive as floats or as strings depending on the endpoint.
+
+    `limit` is the valid range for the axis: 90 for latitude, 180 for
+    longitude. Checking both against 180 let a latitude of 105 through, which
+    the map projects off the top of the world.
+    """
     if value is None or value == "":
         return None
     try:
         f = float(value)
     except (TypeError, ValueError):
         return None
-    return f if abs(f) <= 180.0 else None
+    return f if abs(f) <= limit else None
 
 
 def _img(obj, prefer_thumb=False):
@@ -516,12 +547,12 @@ def norm_launch(l):
             "location": _clean(loc.get("name")),
             "country": (_country(pad.get("country")) or [None])[0],
             "country_code": (_codes(pad.get("country")) or [None])[0],
-            "latitude": _coord(pad.get("latitude")),
+            "latitude": _coord(pad.get("latitude"), 90.0),
             "longitude": _coord(pad.get("longitude")),
             # The site's own coordinates, used to group pads onto one map
             # marker -- individual pads at a site sit a few km apart, which is
             # well under one pixel on a world map.
-            "location_latitude": _coord(loc.get("latitude")),
+            "location_latitude": _coord(loc.get("latitude"), 90.0),
             "location_longitude": _coord(loc.get("longitude")),
             "map_url": pad.get("map_url"),
         },
@@ -646,6 +677,7 @@ def build_payload(store):
     previous.sort(key=lambda l: l.get("net") or "", reverse=True)
 
     sites = build_sites(upcoming)
+    operators = build_operators(upcoming, previous)
 
     return {
         "generated_at": iso(time.time()),
@@ -655,14 +687,17 @@ def build_payload(store):
         "astronauts": astronauts,
         "spacecraft": spacecraft,
         "stations": stations,
-        "operators": build_operators(upcoming, previous),
+        "operators": operators,
         "sites": sites,
         "stats": {
             "upcoming_count": len(upcoming),
             "humans_in_space": len(astronauts),
             "spacecraft_in_space": len(spacecraft),
             "active_stations": len(stations),
-            "operators_count": len({l["provider"]["id"] for l in upcoming if l.get("provider")}),
+            # The operators table is built from upcoming AND previous, so
+            # counting only the upcoming providers printed a smaller number
+            # than the list immediately below it.
+            "operators_count": len(operators),
             "sites_count": len(sites),
         },
         "feeds": store.status(),
