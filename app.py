@@ -14,6 +14,7 @@ import os
 import re
 import threading
 import time
+from collections import OrderedDict
 from urllib.parse import urlparse
 
 import requests
@@ -91,13 +92,108 @@ ALLOWED_IMAGE_HOSTS = ll2.IMAGE_HOSTS
 IMG_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "img")
 os.makedirs(IMG_CACHE, exist_ok=True)
 IMG_MAX_BYTES = 8 * 1024 * 1024
-_img_locks = {}
+
+# The cache is bounded because /api/img is unauthenticated and i.ytimg.com is on
+# the allowlist: every YouTube video id is a distinct, allowed, real image, so a
+# script walking ids could otherwise fill the disk one 100KB thumbnail at a
+# time. The real working set is ~50MB (a few hundred files), so this leaves a
+# large margin for a busy day and still has a ceiling.
+IMG_CACHE_MAX_BYTES = int(float(os.environ.get("IMG_CACHE_MAX_MB", "256")) * 1024 * 1024)
+# How far below the cap a sweep trims, so eviction is occasional rather than
+# once per download at the ceiling.
+IMG_CACHE_TRIM_TO = 0.80
+# Nothing this new is ever evicted: it is either being served right now or was
+# just warmed, and evicting it would only cause an immediate refetch.
+IMG_EVICT_MIN_AGE = 300
+IMG_SWEEP_INTERVAL = 60
+# Freshness is tracked by mtime, updated on serve -- but only when it is
+# already this stale, so a hot image doesn't cost a syscall per request.
+IMG_TOUCH_AFTER = 3600
+
+# Bounded too: one entry per distinct URL is unbounded memory on the same
+# enumeration attack.
+IMG_LOCKS_MAX = 512
+_img_locks = OrderedDict()
 _img_locks_guard = threading.Lock()
+_last_sweep = 0.0
+_sweep_guard = threading.Lock()
 
 
 def _img_lock(key):
+    """Per-file download lock, LRU-bounded.
+
+    Dropping a lock another thread is holding would let two downloads of the
+    same URL run at once; they are skipped. That is safe anyway -- each writes
+    its own temp file and os.replace()s it into place -- but there is no reason
+    to invite it.
+    """
     with _img_locks_guard:
-        return _img_locks.setdefault(key, threading.Lock())
+        lock = _img_locks.get(key)
+        if lock is None:
+            lock = _img_locks[key] = threading.Lock()
+        else:
+            _img_locks.move_to_end(key)
+        excess = len(_img_locks) - IMG_LOCKS_MAX
+        if excess > 0:
+            for old_key in list(_img_locks)[:excess]:
+                if old_key != key and not _img_locks[old_key].locked():
+                    del _img_locks[old_key]
+        return lock
+
+
+def evict_images(force=False):
+    """Trim the image cache back under its cap, oldest first.
+
+    Cheap enough to call after every download: it scans the directory only once
+    a minute, and does nothing at all unless the cap is exceeded.
+    """
+    global _last_sweep
+    now = time.time()
+    with _sweep_guard:
+        if not force and now - _last_sweep < IMG_SWEEP_INTERVAL:
+            return 0
+        _last_sweep = now
+
+    entries = []
+    total = 0
+    try:
+        with os.scandir(IMG_CACHE) as it:
+            for entry in it:
+                try:
+                    if not entry.is_file():
+                        continue
+                    stat = entry.stat()
+                except OSError:
+                    continue
+                total += stat.st_size
+                entries.append((stat.st_mtime, stat.st_size, entry.path))
+    except FileNotFoundError:
+        return 0
+
+    if total <= IMG_CACHE_MAX_BYTES:
+        return 0
+
+    target = int(IMG_CACHE_MAX_BYTES * IMG_CACHE_TRIM_TO)
+    entries.sort()  # oldest mtime first
+    removed = 0
+    for mtime, size, path in entries:
+        if total <= target:
+            break
+        if now - mtime < IMG_EVICT_MIN_AGE:
+            continue  # in flight or just warmed
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            log.warning("could not evict %s: %s", path, exc)
+            continue
+        total -= size
+        removed += 1
+    if removed:
+        log.info("image cache over %dMB: evicted %d files, now ~%dMB",
+                 IMG_CACHE_MAX_BYTES // (1024 * 1024), removed, total // (1024 * 1024))
+    return removed
 
 
 class ImageError(Exception):
@@ -125,20 +221,20 @@ def fetch_image(url, path):
     with _img_lock(os.path.basename(path)):
         if os.path.exists(path):  # another thread may have won the race
             return path
+        # Unique per attempt: two threads can legitimately be downloading the
+        # same URL (see _img_lock), and they must not share a temp file.
+        tmp = "%s.%d.%d.tmp" % (path, os.getpid(), threading.get_ident())
         try:
             r = requests.get(url, timeout=30, stream=True, headers={"User-Agent": ll2.USER_AGENT})
             r.raise_for_status()
             ctype = (r.headers.get("Content-Type") or "").split(";")[0].strip()
             if not ctype.startswith("image/"):
                 raise ImageError(415, "not an image")
-            tmp = path + ".tmp"
             written = 0
             with open(tmp, "wb") as fh:
                 for chunk in r.iter_content(64 * 1024):
                     written += len(chunk)
                     if written > IMG_MAX_BYTES:
-                        fh.close()
-                        os.unlink(tmp)
                         raise ImageError(413, "image too large")
                     fh.write(chunk)
             os.replace(tmp, path)
@@ -147,6 +243,15 @@ def fetch_image(url, path):
         except Exception as exc:
             log.warning("image proxy failed for %s: %s", url, exc)
             raise ImageError(502, "upstream fetch failed")
+        finally:
+            # A partial download must never be left behind: it is bytes the cap
+            # accounts for and nothing will ever serve.
+            if os.path.exists(tmp):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+    evict_images()
     return path
 
 
@@ -215,6 +320,14 @@ def api_img():
         fetch_image(url, path)
     except ImageError as exc:
         return jsonify({"error": exc.message}), exc.status
+
+    # mtime is the cache's LRU clock, so a hit counts as a use. Only written
+    # when it is already stale, to keep this off the hot path.
+    try:
+        if time.time() - os.path.getmtime(path) > IMG_TOUCH_AFTER:
+            os.utime(path, None)
+    except OSError:
+        pass
 
     ctype = mimetypes.guess_type(path)[0] or "image/jpeg"
     resp = send_file(path, mimetype=ctype, conditional=True)
