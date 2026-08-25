@@ -288,8 +288,11 @@
         state.failures++;
         console.warn("data fetch failed", err);
         if (!state.data) {
+          // Nothing has ever loaded. Show the one explanatory message instead
+          // of a page of empty sections -- the line that used to be here was a
+          // forEach whose body only ever returned, so it hid nothing.
           $("#globalEmpty").hidden = false;
-          $$(".view").forEach(function (v) { if (v.id !== "view-launches") return; });
+          $$(".view").forEach(function (v) { v.hidden = true; });
         }
         updateSync();
       });
@@ -346,7 +349,9 @@
     var inFlight = launch.status && launch.status.id === 6;
     var tag = $("#heroTag");
     tag.textContent = inFlight ? "In flight now" : "Next launch";
-    tag.className = "tag tag-live";
+    // The pulsing dot means "happening right now". It was applied
+    // unconditionally, so a launch three weeks out pulsed like a live feed.
+    tag.className = "tag" + (inFlight ? " tag-live" : "");
 
     var p = launch.provider || {};
     $("#heroProvider").textContent = (p.name || "Unknown operator") +
@@ -1453,6 +1458,14 @@
 
   /* ── View switching ──────────────────────────────────────────────── */
 
+  // Also the recovery path: a failed cold start hides every view, so anything
+  // that puts data back on the page has to put the active one back too.
+  function showActiveView() {
+    $$(".view").forEach(function (v) {
+      v.hidden = v.id !== "view-" + state.view;
+    });
+  }
+
   function setView(name) {
     state.view = name;
     $$(".tab").forEach(function (t) {
@@ -1460,9 +1473,7 @@
       t.classList.toggle("is-active", on);
       if (on) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
     });
-    $$(".view").forEach(function (v) {
-      v.hidden = v.id !== "view-" + name;
-    });
+    showActiveView();
     if (history.replaceState) history.replaceState(null, "", "#" + name);
   }
 
@@ -1471,6 +1482,7 @@
   function render() {
     if (!state.data) return;
     $("#globalEmpty").hidden = true;
+    showActiveView();
     renderHero();
     renderKpis();
     renderChips();
